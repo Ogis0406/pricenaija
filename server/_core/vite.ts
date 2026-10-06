@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import viteConfig from "../../vite.config";
+import { renderSeoDocument } from "./seo";
 
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
@@ -38,8 +39,11 @@ export async function setupVite(app: Express, server: Server) {
         `src="/src/main.tsx"`,
         `src="/src/main.tsx?v=${nanoid()}"`
       );
-      const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      const rendered = await renderSeoDocument(template, url);
+      const page = await vite.transformIndexHtml(url, rendered.html);
+      res.status(rendered.status).set({ "Content-Type": "text/html" });
+      if (rendered.private) res.setHeader("Cache-Control", "private, no-store");
+      res.end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
@@ -61,7 +65,15 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
+  app.use("*", async (req, res, next) => {
+    try {
+      const template = await fs.promises.readFile(path.resolve(distPath, "index.html"), "utf-8");
+      const rendered = await renderSeoDocument(template, req.originalUrl);
+      res.status(rendered.status).type("html");
+      if (rendered.private) res.setHeader("Cache-Control", "private, no-store");
+      res.send(rendered.html);
+    } catch (error) {
+      next(error);
+    }
   });
 }

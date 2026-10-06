@@ -1,1 +1,2 @@
-import {} from "./schema";
+import * as schema from "./schema";
+export const relations = schema;
