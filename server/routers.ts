@@ -59,12 +59,9 @@ const authRouter = router({
     const db = await requireDb();
     const email = input.email.trim().toLowerCase();
     if (await findUserByEmail(email)) throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists." });
-    const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-    const configuredAdmin = Boolean(adminEmail && adminEmail === email);
-    const result = await db.insert(users).values({ name: cleanText(input.name, 100), email, passwordHash: await hashPassword(input.password), loginMethod: "email_password", accountRole: configuredAdmin ? "admin" : input.accountRole, role: configuredAdmin ? "admin" : "user", openId: null });
+    const result = await db.insert(users).values({ name: cleanText(input.name, 100), email, passwordHash: await hashPassword(input.password), loginMethod: "email_password", accountRole: input.accountRole, role: "user", openId: null });
     const userId = Number((result as any)[0]?.insertId);
     if (!userId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Account could not be created." });
-    if (configuredAdmin) await db.insert(adminUsers).values({ userId }).onDuplicateKeyUpdate({ set: { userId } });
     const token = await createAuthToken(userId, "verify_email");
     const delivery = await deliverAuthLink(email, "verify_email", token);
     return { ok: true, message: "Check your email to verify your PriceNaija account.", developmentVerifyPath: delivery.developmentPath ?? null };
@@ -363,6 +360,7 @@ const communityRouter = router({
 });
 
 const adminRouter = router({
+  access: adminProcedure.query(({ ctx }) => ({ allowed: true, user: publicUser(ctx.user) })),
   stats: adminProcedure.query(async () => {
     const db = await requireDb();
     const [allUsers, activeUsers, reports, verified, pending, businessesCount, verifiedBusinesses, pendingTrust, searches, mostReported, recentHistory] = await Promise.all([

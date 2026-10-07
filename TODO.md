@@ -50,6 +50,9 @@ The following outcome criteria are carried from the approved specification. Demo
 - Professional role-protected admin dashboard sidebar: Dashboard, Users, Products, Price Reports, Businesses, Business Verification, Trust Reports, Categories, Price Alerts, Analytics, Settings.
 - Admin analytics show Total users, Active users, Total price reports, Verified reports, Pending reports, Registered businesses, Verified businesses, Most searched products, Most reported products and Average price changes.
 - Admin price-verification queue shows Product, Submitted price, Location, Seller, User, Photo evidence, Date and Status. Actions: Approve, Reject, Request More Information. Administrators verify price submissions and businesses, manage users/products/categories, moderate reports and view platform analytics.
+- Only authenticated users with an admin role in the database can access `/admin` and its nested routes. Redirect unauthenticated users and every non-admin user to the homepage.
+- Do not expose an admin registration option or admin role choice on the public website; public sign-up may create Consumer or Business accounts only.
+- Create the initial admin through a backend/database setup command. Never hardcode admin credentials in frontend code; store a password hash in the database, not the plaintext password.
 - Community supports discussions of Prices, Markets, Products, Shopping experiences and Tips. Users can Post, Comment, Like and Report; provide moderation tools.
 
 ## [x] 7. Relational data, sample data and truthful price aggregation

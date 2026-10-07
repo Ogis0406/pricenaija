@@ -87,18 +87,29 @@ export default function App() {
     <Route path="/profile">{shell(<ProfilePage user={(user ?? null) as ShellUser}/>)}</Route>
     <Route path="/trust-safety">{shell(<TrustSafetyPage user={(user ?? null) as ShellUser}/>)}</Route>
     <Route path="/community">{shell(<CommunityPage user={(user ?? null) as ShellUser}/>)}</Route>
-    <Route path="/admin">{shell(<AdminPage user={(user ?? null) as ShellUser}/>)}</Route>
-    <Route path="/admin/reports">{shell(<AdminPage user={(user ?? null) as ShellUser} section="reports"/>)}</Route>
-    <Route path="/admin/trust">{shell(<AdminPage user={(user ?? null) as ShellUser} section="trust"/>)}</Route>
-    <Route path="/admin/businesses">{shell(<AdminPage user={(user ?? null) as ShellUser} section="businesses"/>)}</Route>
-    <Route path="/admin/products">{shell(<AdminPage user={(user ?? null) as ShellUser} section="products"/>)}</Route>
-    <Route path="/admin/users">{shell(<AdminPage user={(user ?? null) as ShellUser} section="users"/>)}</Route>
-    <Route path="/admin/alerts">{shell(<AdminPage user={(user ?? null) as ShellUser} section="alerts"/>)}</Route>
+    <Route path="/admin"><AdminRoute onLogout={() => logout.mutate(undefined)}/></Route>
+    <Route path="/admin/reports"><AdminRoute section="reports" onLogout={() => logout.mutate(undefined)}/></Route>
+    <Route path="/admin/trust"><AdminRoute section="trust" onLogout={() => logout.mutate(undefined)}/></Route>
+    <Route path="/admin/businesses"><AdminRoute section="businesses" onLogout={() => logout.mutate(undefined)}/></Route>
+    <Route path="/admin/products"><AdminRoute section="products" onLogout={() => logout.mutate(undefined)}/></Route>
+    <Route path="/admin/users"><AdminRoute section="users" onLogout={() => logout.mutate(undefined)}/></Route>
+    <Route path="/admin/alerts"><AdminRoute section="alerts" onLogout={() => logout.mutate(undefined)}/></Route>
     <Route path="/privacy">{shell(<InfoPage page="privacy"/>)}</Route>
     <Route path="/terms">{shell(<InfoPage page="terms"/>)}</Route>
     <Route path="/help">{shell(<InfoPage page="help"/>)}</Route>
     <Route>{shell(<NotFound/>)}</Route>
   </Switch>;
+}
+function AdminRoute({ section = "overview", onLogout }: { section?: string; onLogout: () => void }) {
+  const [, setLocation] = useLocation();
+  const access = trpc.admin.access.useQuery(undefined, { retry: false, staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true });
+  useEffect(() => {
+    if (access.isError || (access.isSuccess && !access.data.allowed)) setLocation("/");
+  }, [access.isError, access.isSuccess, access.data, setLocation]);
+  if (access.isLoading || access.isFetching) return <div className="app-loading">Checking administrator access…</div>;
+  if (access.isError || !access.data?.allowed) return null;
+  const user = access.data.user as ShellUser;
+  return <PriceNaijaShell user={user} onLogout={onLogout}><Suspense fallback={<div className="app-loading">Loading the admin workspace…</div>}><AdminPage user={user} section={section}/></Suspense></PriceNaijaShell>;
 }
 function DealsPage() { const deals = demoProducts.filter(item => item.change < 0).sort((a, b) => a.change - b.change); return <div className="content-width page-content"><div className="page-intro"><div><span className="eyebrow">PRICE DROPS &amp; DEALS</span><h1>Good to know when prices move.</h1><p>Sample comparisons for demonstration only — not verified live deals or seller offers.</p></div></div><div className="demo-banner"><span className="demo-tag"><i/> Demo data</span><span>Sample figures only. Confirm current seller prices before purchase.</span></div><div className="deal-list">{deals.map(item => <Link key={item.slug} href={`/products/${item.slug}`} className="deal-row"><span className="product-emoji">{item.icon}</span><div className="deal-details"><b>{item.name}</b><small>{item.category} · {item.quantity} · sample</small><div><del>{naira(Math.round(item.average * 1.065))}</del><strong>{naira(item.low)}</strong></div></div><span className="deal-drop">↓ {Math.abs(item.change)}%</span><span className="pending-badge">Sample comparison</span><ArrowUpRight size={17}/></Link>)}</div></div>; }
 function NotFound() { return <div className="content-width page-content"><div className="empty-state"><span className="empty-icon">404</span><h2>That page isn’t here.</h2><p>Try searching for rice, cement or cooking gas.</p><Link href="/search" className="btn-primary">Compare prices <ArrowRight size={15}/></Link></div></div>; }

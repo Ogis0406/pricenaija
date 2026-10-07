@@ -5,6 +5,8 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { publicPlatformScript } from "./publicConfig";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { resolveSessionUser } from "../accountAuth";
+import { checkDatabaseAdmin } from "../adminAccess";
 import { serveStatic, setupVite } from "./vite";
 
 async function startServer() {
@@ -25,6 +27,15 @@ async function startServer() {
       createContext,
     })
   );
+  app.use("/admin", async (req, res, next) => {
+    try {
+      const user = await resolveSessionUser(req);
+      if (await checkDatabaseAdmin(user) === "allowed") return next();
+    } catch {
+      // Fail closed: a session or database error must not reach the admin HTML.
+    }
+    return res.redirect(302, "/");
+  });
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
