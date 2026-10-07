@@ -45,7 +45,7 @@ The following outcome criteria are carried from the approved specification. Demo
 - Users create alerts (example iPhone 13 current price ₦625,000, target ₦600,000, Create Alert); when target is reached, show a notification.
 - Notifications for Price alert triggered, Price submission verified, Price submission rejected, Business verification, New price report and Important account activity.
 
-## [ ] 6. Admin tools, verification, analytics and community moderation
+## [x] 6. Admin tools, verification, analytics and community moderation
 
 - Professional role-protected admin dashboard sidebar: Dashboard, Users, Products, Price Reports, Businesses, Business Verification, Trust Reports, Categories, Price Alerts, Analytics, Settings.
 - Admin analytics show Total users, Active users, Total price reports, Verified reports, Pending reports, Registered businesses, Verified businesses, Most searched products, Most reported products and Average price changes.
