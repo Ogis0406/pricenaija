@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, gte, inArray, like, lte, max, min, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lte, max, min, or } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -363,9 +363,16 @@ const adminRouter = router({
   access: adminProcedure.query(({ ctx }) => ({ allowed: true, user: publicUser(ctx.user) })),
   stats: adminProcedure.query(async () => {
     const db = await requireDb();
-    const [allUsers, activeUsers, reports, verified, pending, businessesCount, verifiedBusinesses, pendingTrust, searches, mostReported, recentHistory] = await Promise.all([
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
+    const [allUsers, activeUsers, newUsers, verifiedEmails, unverifiedEmails, consumers, businessAccounts, adminAccounts, reports, verified, pending, businessesCount, verifiedBusinesses, pendingTrust, searches, mostReported, recentHistory] = await Promise.all([
       db.select({ value: count() }).from(users),
-      db.select({ value: count() }).from(users).where(gt(users.lastSignedIn, new Date(Date.now() - 30 * 86400000))),
+      db.select({ value: count() }).from(users).where(gt(users.lastSignedIn, thirtyDaysAgo)),
+      db.select({ value: count() }).from(users).where(gt(users.createdAt, thirtyDaysAgo)),
+      db.select({ value: count() }).from(users).where(isNotNull(users.emailVerifiedAt)),
+      db.select({ value: count() }).from(users).where(isNull(users.emailVerifiedAt)),
+      db.select({ value: count() }).from(users).where(eq(users.accountRole, "consumer")),
+      db.select({ value: count() }).from(users).where(eq(users.accountRole, "business")),
+      db.select({ value: count() }).from(users).where(eq(users.accountRole, "admin")),
       db.select({ value: count() }).from(priceReports),
       db.select({ value: count() }).from(priceReports).where(eq(priceReports.status, "verified")),
       db.select({ value: count() }).from(priceReports).where(eq(priceReports.status, "pending")),
@@ -379,7 +386,16 @@ const adminRouter = router({
     const byProduct = new Map<number, number[]>();
     for (const row of recentHistory) byProduct.set(row.productId, [...(byProduct.get(row.productId) ?? []), row.priceNaira]);
     const changes = [...byProduct.values()].filter(values => values.length > 1).map(values => { const baseline = values.slice(1).reduce((sum, value) => sum + value, 0) / (values.length - 1); return baseline > 0 ? ((values[0] - baseline) / baseline) * 100 : 0; });
-    return { users: allUsers[0]?.value ?? 0, activeUsers: activeUsers[0]?.value ?? 0, reports: reports[0]?.value ?? 0, verifiedReports: verified[0]?.value ?? 0, pendingReports: pending[0]?.value ?? 0, businesses: businessesCount[0]?.value ?? 0, verifiedBusinesses: verifiedBusinesses[0]?.value ?? 0, pendingTrustReports: pendingTrust[0]?.value ?? 0, mostSearched: searches, mostReported, averagePriceChangePct: changes.length ? Number((changes.reduce((sum, value) => sum + value, 0) / changes.length).toFixed(1)) : null, demoLabel: "Live database totals" };
+    return {
+      users: allUsers[0]?.value ?? 0, activeUsers: activeUsers[0]?.value ?? 0, newUsers: newUsers[0]?.value ?? 0,
+      verifiedEmails: verifiedEmails[0]?.value ?? 0, unverifiedEmails: unverifiedEmails[0]?.value ?? 0,
+      consumers: consumers[0]?.value ?? 0, businessAccounts: businessAccounts[0]?.value ?? 0, adminAccounts: adminAccounts[0]?.value ?? 0,
+      reports: reports[0]?.value ?? 0, verifiedReports: verified[0]?.value ?? 0, pendingReports: pending[0]?.value ?? 0,
+      businesses: businessesCount[0]?.value ?? 0, verifiedBusinesses: verifiedBusinesses[0]?.value ?? 0, pendingTrustReports: pendingTrust[0]?.value ?? 0,
+      mostSearched: searches, mostReported,
+      averagePriceChangePct: changes.length ? Number((changes.reduce((sum, value) => sum + value, 0) / changes.length).toFixed(1)) : null,
+      demoLabel: "Live database totals",
+    };
   }),
   reports: adminProcedure.input(z.object({ status: z.enum(["pending", "under_review", "verified", "rejected", "open"]).optional() }).optional()).query(async ({ input }) => { const db = await requireDb(); const statusFilter = input?.status === "open" ? inArray(priceReports.status, ["pending", "under_review"]) : input?.status ? eq(priceReports.status, input.status) : undefined; return db.select({ report: priceReports, reporterName: users.name }).from(priceReports).leftJoin(users, eq(priceReports.reporterId, users.id)).where(statusFilter).orderBy(desc(priceReports.createdAt)).limit(100); }),
   reviewReport: adminProcedure.input(z.object({ id: z.number().int().positive(), action: z.enum(["under_review", "verified", "rejected", "request_info"]), note: z.string().max(1000).optional() })).mutation(async ({ input, ctx }) => {
@@ -421,7 +437,32 @@ const adminRouter = router({
   reviewTrustReport: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["under_review", "resolved", "dismissed"]) })).mutation(async ({ input }) => { const db = await requireDb(); await db.update(trustReports).set({ status: input.status, reviewedAt: new Date() }).where(eq(trustReports.id, input.id)); return { ok: true }; }),
   appeals: adminProcedure.input(z.object({ status: z.enum(["pending", "under_review", "resolved", "rejected"]).optional() }).optional()).query(async ({ input }) => { const db = await requireDb(); return db.select({ appeal: businessAppeals, businessName: businesses.name, ownerName: users.name }).from(businessAppeals).leftJoin(businesses, eq(businessAppeals.businessId, businesses.id)).leftJoin(users, eq(businessAppeals.userId, users.id)).where(input?.status ? eq(businessAppeals.status, input.status) : undefined).orderBy(desc(businessAppeals.createdAt)).limit(100); }),
   reviewAppeal: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["under_review", "resolved", "rejected"]) })).mutation(async ({ input }) => { const db = await requireDb(); await db.update(businessAppeals).set({ status: input.status }).where(eq(businessAppeals.id, input.id)); return { ok: true }; }),
-  users: adminProcedure.query(async () => { const db = await requireDb(); return db.select({ id: users.id, name: users.name, email: users.email, accountRole: users.accountRole, emailVerifiedAt: users.emailVerifiedAt, createdAt: users.createdAt, lastSignedIn: users.lastSignedIn }).from(users).orderBy(desc(users.createdAt)).limit(200); }),
+  users: adminProcedure.input(z.object({
+    search: z.string().trim().max(120).optional(),
+    role: z.enum(["all", "consumer", "business", "admin"]).optional(),
+    verification: z.enum(["all", "verified", "unverified"]).optional(),
+    page: z.number().int().min(1).max(100000).optional(),
+    pageSize: z.number().int().min(10).max(100).optional(),
+  }).optional()).query(async ({ input }) => {
+    const db = await requireDb();
+    const page = input?.page ?? 1;
+    const pageSize = input?.pageSize ?? 25;
+    const searchTerm = input?.search?.trim();
+    const escapedSearch = searchTerm?.replace(/[\\%_]/g, "\\$&");
+    const where = and(
+      escapedSearch ? or(like(users.name, `%${escapedSearch}%`), like(users.email, `%${escapedSearch}%`)) : undefined,
+      input?.role && input.role !== "all" ? eq(users.accountRole, input.role) : undefined,
+      input?.verification === "verified" ? isNotNull(users.emailVerifiedAt) : undefined,
+      input?.verification === "unverified" ? isNull(users.emailVerifiedAt) : undefined,
+    );
+    const [items, totals] = await Promise.all([
+      db.select({ id: users.id, name: users.name, email: users.email, accountRole: users.accountRole, emailVerifiedAt: users.emailVerifiedAt, createdAt: users.createdAt, lastSignedIn: users.lastSignedIn })
+        .from(users).where(where).orderBy(desc(users.createdAt)).limit(pageSize).offset((page - 1) * pageSize),
+      db.select({ total: count() }).from(users).where(where),
+    ]);
+    const total = totals[0]?.total ?? 0;
+    return { items, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
+  }),
   updateUserRole: adminProcedure.input(z.object({ userId: z.number().int().positive(), accountRole: z.enum(["consumer", "business"]) })).mutation(async ({ input }) => { const db = await requireDb(); const target = await db.select({ role: users.role, accountRole: users.accountRole }).from(users).where(eq(users.id, input.userId)).limit(1); if (!target[0]) throw new TRPCError({ code: "NOT_FOUND", message: "User account not found." }); const admin = await db.select({ id: adminUsers.id }).from(adminUsers).where(eq(adminUsers.userId, input.userId)).limit(1); if (target[0].accountRole === "admin" || target[0].role === "admin" || admin[0]) throw new TRPCError({ code: "FORBIDDEN", message: "Administrator roles are managed through protected server configuration." }); await db.update(users).set({ accountRole: input.accountRole, role: "user" }).where(eq(users.id, input.userId)); return { ok: true }; }),
   products: adminProcedure.query(async () => { const db = await requireDb(); return db.select({ product: products, categoryName: categories.name }).from(products).leftJoin(categories, eq(products.categoryId, categories.id)).orderBy(products.name).limit(300); }),
   createProduct: adminProcedure.input(z.object({ name: z.string().min(2).max(180), category: z.string().min(2).max(100), brand: z.string().max(120).optional(), quantityLabel: z.string().min(1).max(80), description: z.string().max(2000).optional() })).mutation(async ({ input }) => { const db = await requireDb(); const cat = await db.select({ id: categories.id }).from(categories).where(eq(categories.name, input.category)).limit(1); const base = slugify(input.name).slice(0, 180); await db.insert(products).values({ name: cleanText(input.name, 180), slug: `${base}-${Date.now().toString(36)}`, categoryId: cat[0]?.id ?? null, brand: input.brand ? cleanText(input.brand, 120) : null, quantityLabel: cleanText(input.quantityLabel, 80), description: input.description ? cleanText(input.description, 2000) : null, isDemo: false, isActive: true }); return { ok: true }; }),
