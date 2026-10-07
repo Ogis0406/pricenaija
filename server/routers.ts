@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lte, max, min, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lte, max, min, or, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -134,8 +134,18 @@ const productsRouter = router({
     if (input?.minRating !== undefined) filters.push(gte(businesses.ratingTenths, Math.round(input.minRating * 10)));
     if (input?.verifiedOnly) filters.push(eq(businesses.verificationStatus, "verified"));
     if (input?.updatedWithinDays) { const since = new Date(Date.now() - input.updatedWithinDays * 86400000); filters.push(or(gt(businessProducts.updatedAt, since), gt(priceReports.observedAt, since))); }
-    const query = input?.query?.trim();
-    if (query) filters.push(or(like(products.name, `%${query}%`), like(products.brand, `%${query}%`), like(products.description, `%${query}%`), like(categories.name, `%${query}%`), like(businesses.name, `%${query}%`), like(locations.city, `%${query}%`), like(locations.state, `%${query}%`)));
+    const query = input?.query?.trim().toLowerCase();
+    if (query) {
+      const pattern = `%${query}%`;
+      filters.push(or(
+        sql`LOWER(${products.name}) LIKE ${pattern}`,
+        sql`LOWER(${products.brand}) LIKE ${pattern}`,
+        sql`LOWER(${categories.name}) LIKE ${pattern}`,
+        sql`LOWER(${businesses.name}) LIKE ${pattern}`,
+        sql`LOWER(${locations.city}) LIKE ${pattern}`,
+        sql`LOWER(${locations.state}) LIKE ${pattern}`,
+      ));
+    }
     const condition = and(...filters);
     const rows = await db.selectDistinct({ product: products, categoryName: categories.name })
       .from(products).leftJoin(categories, eq(products.categoryId, categories.id))
@@ -255,8 +265,16 @@ const businessRouter = router({
     if (input?.minRating !== undefined) filters.push(gte(businesses.ratingTenths, Math.round(input.minRating * 10)));
     if (input?.minPrice !== undefined) filters.push(gte(businessProducts.priceNaira, input.minPrice));
     if (input?.maxPrice !== undefined) filters.push(lte(businessProducts.priceNaira, input.maxPrice));
-    const q = input?.query?.trim();
-    if (q) filters.push(or(like(businesses.name, `%${q}%`), like(businesses.category, `%${q}%`), like(businesses.description, `%${q}%`), like(products.name, `%${q}%`)));
+    const q = input?.query?.trim().toLowerCase();
+    if (q) {
+      const pattern = `%${q}%`;
+      filters.push(or(
+        sql`LOWER(${businesses.name}) LIKE ${pattern}`,
+        sql`LOWER(${businesses.category}) LIKE ${pattern}`,
+        sql`LOWER(${businesses.description}) LIKE ${pattern}`,
+        sql`LOWER(${products.name}) LIKE ${pattern}`,
+      ));
+    }
     const rows = await db.selectDistinct({ business: businesses, city: locations.city, state: locations.state })
       .from(businesses).leftJoin(locations, eq(businesses.locationId, locations.id))
       .leftJoin(businessProducts, and(eq(businessProducts.businessId, businesses.id), eq(businessProducts.available, true)))
