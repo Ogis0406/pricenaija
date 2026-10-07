@@ -2,6 +2,8 @@
 // Uploads via Forge Server presigned URL to S3 (PUT direct).
 // Downloads return /manus-storage/{key} paths served via 307 redirect.
 
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve, sep } from "node:path";
 import { ENV } from "./_core/env";
 
 function getForgeConfig() {
@@ -18,7 +20,9 @@ function getForgeConfig() {
 }
 
 function normalizeKey(relKey: string): string {
-  return relKey.replace(/^\/+/, "");
+  const key = relKey.replace(/^\/+/, "").replace(/\\/g, "/");
+  if (!key || key.split("/").some(part => !part || part === "." || part === "..")) throw new Error("Invalid storage object key");
+  return key;
 }
 
 function appendHashSuffix(relKey: string): string {
@@ -33,8 +37,20 @@ export async function storagePut(
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
+  const normalizedKey = normalizeKey(relKey);
+  const key = appendHashSuffix(normalizedKey);
+
+  if (!ENV.forgeApiUrl && !ENV.forgeApiKey && !ENV.isProduction) {
+    const root = resolve(process.cwd(), process.env.LOCAL_UPLOAD_DIR || ".local-storage");
+    const filePath = resolve(root, ...key.split("/"));
+    if (!filePath.startsWith(`${root}${sep}`)) throw new Error("Invalid local storage path");
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, data);
+    const publicPath = key.split("/").map(part => encodeURIComponent(part)).join("/");
+    return { key, url: `/local-storage/${publicPath}` };
+  }
+
   const { forgeUrl, forgeKey } = getForgeConfig();
-  const key = appendHashSuffix(normalizeKey(relKey));
 
   // 1. Get presigned PUT URL from Forge
   const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");

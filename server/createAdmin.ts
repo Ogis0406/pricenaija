@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { eq } from "drizzle-orm";
 import { adminUsers, users } from "../drizzle/schema";
 import { closeDb, getDb } from "./db";

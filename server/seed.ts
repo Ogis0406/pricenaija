@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { eq } from "drizzle-orm";
 import { businesses, categories, locations, products } from "../drizzle/schema";
 import { closeDb, getDb } from "./db";

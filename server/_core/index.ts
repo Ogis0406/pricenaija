@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
+import { resolve } from "node:path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { publicPlatformScript } from "./publicConfig";
 import { appRouter } from "../routers";
@@ -19,6 +20,10 @@ async function startServer() {
   app.get("/api/platform/config.js", (_req, res) => {
     res.set("Cache-Control", "no-store").type("application/javascript").send(publicPlatformScript());
   });
+  if (process.env.NODE_ENV !== "production") {
+    const uploadDir = resolve(process.env.LOCAL_UPLOAD_DIR || ".local-storage");
+    app.use("/local-storage", express.static(uploadDir, { dotfiles: "deny", index: false, fallthrough: false }));
+  }
   // tRPC API
   app.use(
     "/api/trpc",

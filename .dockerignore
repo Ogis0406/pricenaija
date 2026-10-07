@@ -3,5 +3,12 @@ dist
 .git
 .env
 .env.*
+.local-storage
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+service-account*.json
 .manus-logs
 *.manus-starter-*
